@@ -1,0 +1,145 @@
+/* ==========================================================================
+   kit.css — the shared "playful" theme for game pages. The home page
+   (index.html) has its own neutral style. See GAMES_GUIDE.md §3.
+   ========================================================================== */
+
+:root {
+  --bg: #fff7e8;
+  --card: #ffffff;
+  --ink: #2b2d42;
+  --muted: #6b6f80;
+  --line: #ece3d2;
+  --accent: #ff6b4a;
+  --accent-soft: #fff0ea;
+  --accent-ink: #ffffff;
+  --good: #1fa463;
+  --good-bg: #dcf7e7;
+  --bad: #e5383b;
+  --bad-bg: #ffe1e1;
+  --focus: #3a86ff;
+  --radius: 18px;
+  --shadow: 0 3px 0 rgba(43, 45, 66, .10), 0 8px 20px rgba(43, 45, 66, .06);
+  --font: ui-rounded, "SF Pro Rounded", "Segoe UI Rounded", "Nunito", "Arial Rounded MT Bold", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font: 500 18px/1.4 var(--font);
+  -webkit-tap-highlight-color: transparent;
+}
+a { color: inherit; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* ---- top bar: 🏠  Title  ⚙️ ------------------------------------------- */
+.bar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg);
+}
+.bar h1 {
+  flex: 1; margin: 0; text-align: center;
+  font-size: 1.3rem; font-weight: 800;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.icon-btn {
+  flex: none; width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 14px;
+  background: var(--card); box-shadow: var(--shadow);
+  font-size: 22px; text-decoration: none; cursor: pointer;
+}
+
+main { max-width: 760px; margin: 0 auto; padding: 4px 16px 40px; }
+
+/* ---- buttons ---------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 52px; padding: 10px 22px;
+  border: 0; border-radius: 999px;
+  background: var(--card); color: var(--ink); box-shadow: var(--shadow);
+  font: inherit; font-weight: 800; text-decoration: none;
+  cursor: pointer; touch-action: manipulation; user-select: none;
+}
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0, 0, 0, .1); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.big { min-height: 60px; font-size: 1.2rem; padding: 12px 32px; }
+.btn.small { min-height: 40px; padding: 6px 14px; font-size: .9rem; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 16px; }
+
+/* ---- general bits ----------------------------------------------------- */
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+.center { text-align: center; }
+.muted { color: var(--muted); }
+.big-emoji { font-size: 64px; line-height: 1; }
+kbd {
+  font: inherit; font-size: .75em; padding: 0 6px;
+  border: 1.5px solid currentColor; border-radius: 6px; opacity: .75;
+}
+.pills { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; margin: 4px 0 12px; }
+.pill {
+  background: var(--card); border-radius: 999px; padding: 6px 14px;
+  box-shadow: var(--shadow); font-weight: 700;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* ---- settings page (built by Kit.renderSetup) -------------------------- */
+.setup fieldset { border: 0; margin: 0 0 20px; padding: 0; min-width: 0; }
+.setup legend { font-weight: 800; margin-bottom: 8px; padding: 0; }
+.setup-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.setup-head h2 { margin: 0; }
+.setup-head .big-emoji { font-size: 48px; }
+.seg { display: flex; flex-wrap: wrap; gap: 10px; }
+.seg-opt { position: relative; flex: 1 1 80px; }
+.seg-opt input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.seg-opt span {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 58px; padding: 8px 10px; text-align: center;
+  border: 3px solid var(--line); border-radius: 14px; background: var(--card);
+  font-size: 1.05rem;
+}
+.seg-opt small { font-weight: 500; color: var(--muted); font-size: .8rem; }
+.seg-opt input:checked + span { border-color: var(--accent); background: var(--accent-soft); }
+.seg-opt input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 2px; }
+.setup-note { min-height: 1.4em; color: var(--muted); font-size: .9rem; margin: 0; }
+
+/* ---- results table ----------------------------------------------------- */
+.table-wrap { overflow-x: auto; margin-top: 16px; border-radius: var(--radius); box-shadow: var(--shadow); }
+table.results { width: 100%; border-collapse: collapse; background: var(--card); font-variant-numeric: tabular-nums; }
+.results th, .results td { padding: 10px 12px; text-align: center; border-bottom: 1px solid var(--line); white-space: nowrap; }
+@media (max-width: 480px) {
+  table.results { font-size: .85rem; }
+  .results th, .results td { padding: 9px 5px; }
+}
+.results th { background: #fff0d6; font-size: .85rem; }
+.results tr:last-child td { border-bottom: 0; }
+.results .yes { color: var(--good); font-weight: 800; }
+.results .no { color: var(--bad); font-weight: 800; }
+
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 16px; }
+.stat-cards .card { padding: 14px; text-align: center; }
+.stat-cards b { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.stat-cards span { color: var(--muted); font-size: .85rem; }
+
+/* ---- shared animations ------------------------------------------------- */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
+@keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(1.18); } 100% { transform: scale(1); } }
+.shake { animation: shake .4s; }
+.pop { animation: pop .35s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

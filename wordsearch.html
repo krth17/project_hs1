@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fff7e8">
+<title>Word Search</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔍</text></svg>">
+<link rel="stylesheet" href="assets/kit.css">
+<style>
+  .ws-result { margin-bottom: 14px; text-align: center; scroll-margin-top: 76px; }
+  .ws-result h2 { margin: 8px 0 4px; }
+  .ws-result .res-time { font-size: 1.4rem; font-weight: 800; margin: 4px 0; }
+
+  .ws-grid {
+    --cols: 10;
+    container-type: inline-size;
+    display: grid;
+    grid-template-columns: repeat(var(--cols), 1fr);
+    gap: 3px;
+    width: min(100%, calc(var(--cols) * 46px));
+    margin: 0 auto;
+    padding: 6px;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    touch-action: manipulation;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  .cell {
+    aspect-ratio: 1;
+    display: grid; place-items: center;
+    border-radius: 7px;
+    background: #fbf6ee;
+    font-weight: 800;
+    font-size: 18px;
+    font-size: calc(100cqw / var(--cols) * .56);
+    line-height: 1;
+    cursor: pointer;
+  }
+  @media (hover: hover) { .cell:hover { background: #ffeac2; } }
+  .cell.found { color: #1f2035; }
+  .cell.pressing { animation: hold 350ms linear forwards; }
+  @keyframes hold { to { background: #ffd166; transform: scale(1.18); } }
+  .cell.miss { animation: miss .55s; }
+  @keyframes miss {
+    0%, 100% { transform: scale(1); }
+    25% { background: var(--bad); color: #fff; transform: scale(.88); }
+    60% { background: var(--bad-bg); }
+  }
+  .cell.reveal { box-shadow: inset 0 0 0 2px var(--bad); color: var(--bad); border-radius: 50%; }
+  .over .cell { cursor: default; }
+
+  .ws-hint { text-align: center; margin: 10px 0; font-size: .95rem; min-height: 1.4em; }
+  .ws-hint.nudge { color: var(--accent); font-weight: 800; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .chip {
+    padding: 6px 12px; border-radius: 999px;
+    background: var(--card); box-shadow: var(--shadow);
+    font-weight: 800; letter-spacing: .05em;
+  }
+  .chip.found { text-decoration: line-through; text-decoration-thickness: 3px; }
+  .chip.missed { color: var(--bad); box-shadow: inset 0 0 0 2px var(--bad); }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="icon-btn" href="index.html" aria-label="Home" title="Home">🏠</a>
+  <h1>🔍 Word Search</h1>
+  <a class="icon-btn" id="gear" href="?setup" aria-label="Settings" title="Settings">⚙️</a>
+</header>
+<main id="app"></main>
+
+<script src="assets/kit.js"></script>
+<script src="assets/words.js"></script>
+<script>
+(function () {
+  'use strict';
+  const { h } = Kit;
+
+  const SCHEMA = [
+    { key: 'level', label: 'Level', default: '1', options: [
+      { value: '1', label: 'Level 1', hint: '5-letter words' },
+      { value: '2', label: 'Level 2', hint: '6-letter words' },
+      { value: '3', label: 'Level 3', hint: '7 to 9 letters' } ] },
+    { key: 'list', label: 'Show the list of words?', default: 'yes', options: [
+      { value: 'yes', label: '👀 Yes', hint: 'see the words' },
+      { value: 'no', label: '🙈 No', hint: 'mystery words' } ] },
+    { key: 'diag', label: 'Diagonal words?', default: 'no', options: [
+      { value: 'no', label: 'No', hint: 'across and down only' },
+      { value: 'yes', label: '↘ Yes', hint: 'slanting words too' } ] },
+    { key: 'rev', label: 'Backwards words?', default: 'no', options: [
+      { value: 'no', label: 'No', hint: 'read → and ↓ only' },
+      { value: 'yes', label: '← Yes', hint: 'also ← and ↑' } ] }
+  ];
+  const LEVELS = {
+    1: { size: 10, min: 5, max: 5 },
+    2: { size: 12, min: 6, max: 6 },
+    3: { size: 13, min: 7, max: 9 }
+  };
+  const HIDE = 10;        // words per puzzle
+  const TAPS = 13;        // taps allowed per puzzle
+  const HOLD_MS = 350;    // long-press time on touch screens
+  // [row step, column step]; ALL_DIRS is also used to check for accidental repeats.
+  const ALL_DIRS = [[0, 1], [1, 0], [1, 1], [0, -1], [-1, 0], [-1, 1], [1, -1], [-1, -1]];
+  const ARROWS = { '0,1': '→', '1,0': '↓', '1,1': '↘', '0,-1': '←', '-1,0': '↑', '-1,1': '↗', '1,-1': '↙', '-1,-1': '↖' };
+  const COLORS = ['#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff',
+                  '#a0c4ff', '#bdb2ff', '#ffc6ff', '#b5ead7', '#f1c0e8'];
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+  const app = document.getElementById('app');
+  const init = Kit.readSettings(SCHEMA);
+  Kit.wireHeader(init.settings);
+  if (init.setup) {
+    Kit.renderSetup(app, { id: 'wordsearch', title: 'Word Search settings', emoji: '🔍', schema: SCHEMA, initial: init });
+    return;
+  }
+
+  const S = init.settings;
+  const cfg = LEVELS[S.level];
+  const showList = S.list === 'yes';
+  // "Forward" means read left→right or top→bottom (no negative step).
+  const DIRS = ALL_DIRS.filter(([dr, dc]) =>
+    (S.diag === 'yes' || dr === 0 || dc === 0) && (S.rev === 'yes' || (dr >= 0 && dc >= 0)));
+  const pool = WORDS[S.level].trim().split(/\s+/).map(w => w.toUpperCase())
+    .filter(w => /^[A-Z]+$/.test(w) && w.length >= cfg.min && w.length <= cfg.max && w.length <= cfg.size);
+
+  /* ---- puzzle building ----------------------------------------------- */
+  function chooseWords() {
+    const out = [];
+    for (const w of Kit.shuffle(pool.slice())) {
+      const r = [...w].reverse().join('');
+      if (out.some(o => o.includes(w) || w.includes(o) || o.includes(r) || r.includes(o))) continue;
+      out.push(w);
+      if (out.length === HIDE) break;
+    }
+    return out.sort((a, b) => b.length - a.length);
+  }
+
+  function placeWord(g, n, w, starts) {
+    for (let t = 0; t < 400; t++) {
+      const [dr, dc] = Kit.pick(DIRS);
+      const r = Kit.randInt(0, n - 1), c = Kit.randInt(0, n - 1);
+      const er = r + dr * (w.length - 1), ec = c + dc * (w.length - 1);
+      if (er < 0 || er >= n || ec < 0 || ec >= n || starts.has(r * n + c)) continue;
+      const cells = [];
+      let ok = true;
+      for (let k = 0; k < w.length; k++) {
+        const i = (r + dr * k) * n + (c + dc * k);
+        if (g[i] && g[i] !== w[k]) { ok = false; break; }
+        cells.push(i);
+      }
+      if (!ok) continue;
+      cells.forEach((i, k) => { g[i] = w[k]; });
+      starts.add(cells[0]);
+      return { word: w, cells, start: cells[0] };
+    }
+    return null;
+  }
+
+  // How many times `w` can be read anywhere in the grid (any direction).
+  function occurrences(grid, n, w) {
+    let count = 0;
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      if (grid[r * n + c] !== w[0]) continue;
+      for (const [dr, dc] of ALL_DIRS) {
+        let k = 1;
+        for (; k < w.length; k++) {
+          const rr = r + dr * k, cc = c + dc * k;
+          if (rr < 0 || rr >= n || cc < 0 || cc >= n || grid[rr * n + cc] !== w[k]) break;
+        }
+        if (k === w.length) count++;
+      }
+    }
+    return count;
+  }
+
+  function makePuzzle() {
+    const n = cfg.size;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const g = new Array(n * n).fill('');
+      const starts = new Set();
+      const placed = [];
+      for (const w of chooseWords()) {
+        const p = placeWord(g, n, w, starts);
+        if (!p) break;
+        placed.push(p);
+      }
+      if (placed.length !== HIDE) continue;
+      // Fill the gaps; make sure no hidden word accidentally appears twice.
+      for (let f = 0; f < 40; f++) {
+        const grid = g.map(ch => ch || Kit.pick(LETTERS));
+        if (placed.every(p => occurrences(grid, n, p.word) === 1)) {
+          return { n, grid, words: Kit.shuffle(placed) };
+        }
+      }
+    }
+    throw new Error('Could not build a puzzle');
+  }
+
+  /* ---- game state ----------------------------------------------------- */
+  let P, found, cover, taps, over, sw, tick, startMap;
+  let gridEl, cells, chips, timeEl, tapsEl, foundEl, resultEl, hintEl;
+  let press = null;
+
+  function newGame() {
+    cancelPress();
+    clearInterval(tick);
+    P = makePuzzle();
+    found = new Set();
+    cover = new Array(P.n * P.n).fill(0);
+    taps = TAPS;
+    over = false;
+    startMap = new Map(P.words.map((w, k) => [w.start, k]));
+
+    timeEl = h('span', { class: 'pill' });
+    tapsEl = h('span', { class: 'pill' });
+    foundEl = h('span', { class: 'pill' });
+    resultEl = h('section', { class: 'ws-result card', hidden: true });
+    gridEl = h('div', { class: 'ws-grid', style: '--cols:' + P.n });
+    cells = P.grid.map((ch, i) => h('div', { class: 'cell', 'data-i': i }, ch));
+    gridEl.append(...cells);
+    chips = P.words.map(w => h('span', { class: 'chip' }, showList ? w.word : '•'.repeat(w.word.length)));
+    hintEl = h('p', { class: 'ws-hint muted' });
+    setHint();
+
+    app.replaceChildren(
+      h('div', { class: 'pills' },
+        h('span', { class: 'pill' }, 'Level ' + S.level),
+        h('span', { class: 'pill', title: 'Words go these ways' }, DIRS.map(d => ARROWS[d]).join(' ')),
+        timeEl, tapsEl, foundEl),
+      resultEl, gridEl, hintEl,
+      h('div', { class: 'chips' }, chips));
+
+    gridEl.addEventListener('pointerdown', onDown);
+    gridEl.addEventListener('pointermove', onMove);
+    gridEl.addEventListener('pointerup', onUp);
+    gridEl.addEventListener('pointercancel', cancelPress);
+    gridEl.addEventListener('contextmenu', e => e.preventDefault());
+
+    sw = Kit.stopwatch();
+    tick = setInterval(showTime, 200);
+    showTime();
+    showCounts();
+  }
+
+  function setHint(nudge) {
+    hintEl.className = 'ws-hint ' + (nudge ? 'nudge' : 'muted');
+    hintEl.textContent = nudge
+      ? '✋ Keep your finger on the letter a little longer'
+      : (Kit.isTouch() ? '✋ Press and hold the FIRST letter of a word' : '👆 Click the FIRST letter of a word');
+  }
+  function showTime() { timeEl.textContent = '⏱ ' + Kit.fmtTime(sw.ms()); }
+  function showCounts() {
+    tapsEl.textContent = '👆 ' + taps + ' taps left';
+    foundEl.textContent = '✓ ' + found.size + ' / ' + HIDE;
+  }
+
+  /* ---- input: click (mouse) or long-press (touch) --------------------- */
+  function onDown(e) {
+    const cell = e.target.closest('.cell');
+    if (!cell || over) return;
+    if (e.pointerType === 'mouse') {
+      if (e.button === 0) choose(+cell.dataset.i);
+      return;
+    }
+    cancelPress();
+    cell.classList.add('pressing');
+    press = {
+      cell, x: e.clientX, y: e.clientY,
+      t: setTimeout(() => {
+        const c = press.cell;
+        cancelPress();
+        if (navigator.vibrate) navigator.vibrate(25);
+        choose(+c.dataset.i);
+      }, HOLD_MS)
+    };
+  }
+  function onMove(e) {
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 12) cancelPress();
+  }
+  function onUp() {
+    if (press) { cancelPress(); setHint(true); }   // let go too early
+  }
+  function cancelPress() {
+    if (!press) return;
+    clearTimeout(press.t);
+    press.cell.classList.remove('pressing');
+    press = null;
+  }
+
+  function choose(i) {
+    if (over) return;
+    setHint();
+    const k = startMap.get(i);
+    if (k !== undefined && !found.has(k)) {
+      found.add(k);
+      taps--;
+      P.words[k].cells.forEach(ci => {
+        cover[ci]++;
+        cells[ci].classList.add('found');
+        cells[ci].style.background = COLORS[k];
+        Kit.flash(cells[ci], 'pop');
+      });
+      chips[k].textContent = P.words[k].word;
+      chips[k].classList.add('found');
+      chips[k].style.background = COLORS[k];
+    } else if (cover[i] > 0) {
+      return;                                       // already-found letter: free
+    } else {
+      taps--;
+      Kit.flash(cells[i], 'miss');
+    }
+    showCounts();
+    if (found.size === HIDE || taps === 0) finish();
+  }
+
+  function finish() {
+    over = true;
+    clearInterval(tick);
+    const ms = sw.stop();
+    showTime();
+    gridEl.classList.add('over');
+    P.words.forEach((w, k) => {
+      if (found.has(k)) return;
+      w.cells.forEach(ci => cells[ci].classList.add('reveal'));
+      chips[k].textContent = w.word;
+      chips[k].classList.add('missed');
+    });
+
+    const all = found.size === HIDE;
+    const replay = h('button', { class: 'btn primary big', onclick: () => { newGame(); window.scrollTo(0, 0); } }, '🔁 Replay');
+    resultEl.replaceChildren(
+      h('div', { class: 'big-emoji' }, all ? '🎉' : (found.size >= 7 ? '⭐' : '💪')),
+      h('h2', null, all ? 'You found all ' + HIDE + ' words!' : 'You found ' + found.size + ' of ' + HIDE + ' words'),
+      h('p', { class: 'res-time' }, '⏱ ' + Kit.fmtTime(ms)),
+      all ? null : h('p', { class: 'muted' }, 'The words you missed are circled in red.'),
+      h('div', { class: 'row' }, replay, h('a', { class: 'btn', href: 'index.html' }, '🏠 Home')));
+    resultEl.hidden = false;
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    replay.focus({ preventScroll: true });
+  }
+
+  newGame();
+})();
+</script>
+</body>
+</html>

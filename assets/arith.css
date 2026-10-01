@@ -1,0 +1,50 @@
+/* Styles for the arithmetic drill games (addition.html, subtraction.html). */
+
+.play-stats { margin-bottom: 6px; }
+
+.play { display: flex; align-items: flex-end; justify-content: center; gap: 14px; margin-top: 4px; }
+
+/* Written-sum layout: numbers stacked and right-aligned, like on paper. */
+.sum {
+  --w: 4;                                   /* set by JS: widest row in digits */
+  font-size: clamp(40px, 12vw, 64px);
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  width: calc(var(--w) * 1ch + 1ch);
+}
+.sum-row { display: flex; justify-content: flex-end; padding-right: .3ch; }
+.sum-row.op { justify-content: space-between; padding-left: .1ch; }
+.sum-line { border-top: 5px solid var(--ink); border-radius: 3px; margin: 4px 0 8px; }
+
+.ans {
+  display: block;
+  width: 100%;
+  font: inherit;
+  text-align: right;
+  padding: 0 .2ch;
+  border: 4px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
+  caret-color: var(--accent);
+  outline: none;
+}
+.ans:focus { border-color: var(--focus); }
+.ans.good { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+.ans.bad { border-color: var(--bad); background: var(--bad-bg); }
+
+.keys { display: flex; flex-direction: column; gap: 10px; }
+.sign { min-width: 76px; min-height: 52px; border-radius: 18px; font-size: 1.5rem; padding: 4px; }
+.go {
+  min-width: 76px; min-height: 76px;
+  border-radius: 22px;
+  font-size: 1.15rem;
+  padding: 8px 12px;
+  margin-bottom: 2px;
+}
+
+.feedback { min-height: 2.6em; margin-top: 12px; text-align: center; font-weight: 800; font-size: 1.15rem; }
+.feedback.ok { color: var(--good); }
+.feedback.no { color: var(--bad); }
+.feedback small { display: block; font-weight: 600; color: var(--muted); font-size: .85rem; }
