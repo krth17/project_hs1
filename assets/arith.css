@@ -7,7 +7,7 @@
 /* Written-sum layout: numbers stacked and right-aligned, like on paper. */
 .sum {
   --w: 4;                                   /* set by JS: widest row in digits */
-  font-size: clamp(40px, 12vw, 64px);
+  font-size: clamp(34px, min(12vw, 8vh), 64px);   /* shrinks on short screens */
   font-weight: 800;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
@@ -42,6 +42,30 @@
   font-size: 1.15rem;
   padding: 8px 12px;
   margin-bottom: 2px;
+}
+
+/* ---- on-screen number pad (touch devices; replaces the system keyboard) ---- */
+.pad { display: grid; grid-template-columns: 3fr 1fr; gap: 8px; max-width: 380px; margin: 6px auto 0; }
+.digits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.arena.touch .feedback { min-height: 1.5em; margin-top: 6px; font-size: 1.05rem; }
+.arena.touch .feedback small { display: none; }          /* no room: the ↵ key says "Next" */
+.arena.touch .play { margin-top: 0; }
+.pad .key, .pad .go {
+  min-width: 0; min-height: clamp(40px, 7.5vh, 60px);
+  padding: 0; border-radius: 16px; font-size: 1.5rem;
+}
+.pad .go { min-height: 0; font-size: 2rem; margin: 0; }
+.pad .key:active { background: var(--accent-soft); }
+.pad .go:active { background: var(--accent); filter: brightness(.9); }
+.pad .sign { font-size: 1.5rem; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .arena { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .pad { margin: 0; width: 100%; }
+  .pad .key, .pad .go { min-height: 40px; }
+  .feedback { margin-top: 6px; }
+  .bar { padding: 6px 16px; }
+  .bar .icon-btn { width: 40px; height: 40px; }
+  .pills { margin: 0 0 6px; }
 }
 
 .feedback { min-height: 2.6em; margin-top: 12px; text-align: center; font-weight: 800; font-size: 1.15rem; }

@@ -61,6 +61,8 @@
   // A tap is needed before the phone keyboard can open, so the game begins
   // with a single Start button (Enter on desktop).
   function ready() {
+    // Touch devices use our own number pad, so no keyboard needs a tap to open.
+    if (Kit.isTouch()) { play(); return; }
     const start = h('button', { class: 'btn primary big', onclick: play }, '▶ Start');
     app.replaceChildren(h('section', { class: 'card center' },
       h('div', { class: 'big-emoji' }, G.emoji),
@@ -84,14 +86,21 @@
     timeEl = h('span', { class: 'pill' });
     const endBtn = h('button', { class: 'btn small', type: 'button', onclick: end }, '■ End');
 
+    // On a phone or tablet the system keyboard would cover half the screen, so
+    // touch devices get our own compact number pad instead (inputmode="none"
+    // keeps the system keyboard closed). Desktops type on the real keyboard.
+    const touch = Kit.isTouch();
     xEl = h('span');
     yEl = h('span');
     input = h('input', {
-      class: 'ans', id: 'ans', type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
+      class: 'ans', id: 'ans', type: 'text', inputmode: touch ? 'none' : 'numeric', pattern: '[0-9]*',
       autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'go',
       'aria-label': 'Your answer'
     });
-    goBtn = h('button', { class: 'btn primary go', type: 'submit', 'aria-label': 'Enter' }, '↵');
+    // ↵ is inside the form on desktop; on touch it is part of the number pad.
+    goBtn = h('button', touch
+      ? { class: 'btn primary go', type: 'button', 'aria-label': 'Enter', onclick: submit }
+      : { class: 'btn primary go', type: 'submit', 'aria-label': 'Enter' }, '↵');
     // Phone number pads often have no minus key, hence the ± button.
     const signBtn = NEG ? h('button', { class: 'btn sign', type: 'button', 'aria-label': 'Minus sign', onclick: toggleSign }, '±') : null;
     const form = h('form', { class: 'play', novalidate: true },
@@ -100,10 +109,28 @@
         h('div', { class: 'sum-row op' }, h('span', null, SIGN), yEl),
         h('div', { class: 'sum-line' }),
         input),
-      h('div', { class: 'keys' }, signBtn, goBtn));
+      touch ? null : h('div', { class: 'keys' }, signBtn, goBtn));
     fb = h('div', { class: 'feedback', 'aria-live': 'polite' });
     Kit.keepFocus(goBtn, endBtn);
     if (signBtn) Kit.keepFocus(signBtn);
+
+    let pad = null;
+    if (touch) {
+      const key = (label, aria, fn, cls) => {
+        const b = h('button', { class: 'btn key ' + (cls || ''), type: 'button', 'aria-label': aria, onclick: fn }, label);
+        Kit.keepFocus(b);
+        return b;
+      };
+      const digit = d => key(String(d), String(d), () => typeDigit(String(d)));
+      Kit.keepFocus(goBtn);
+      pad = h('div', { class: 'pad' },
+        h('div', { class: 'digits' },
+          [1, 2, 3, 4, 5, 6, 7, 8, 9].map(digit),
+          signBtn ? (signBtn.classList.add('key'), signBtn) : h('span'),
+          digit(0),
+          key('⌫', 'Delete', backspace, 'back')),
+        goBtn);
+    }
 
     form.addEventListener('submit', e => { e.preventDefault(); submit(); });
     input.addEventListener('input', () => {
@@ -112,7 +139,8 @@
     });
     input.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); end(); } });
 
-    app.replaceChildren(h('div', { class: 'pills play-stats' }, qEl, starEl, timeEl, endBtn), form, fb);
+    app.replaceChildren(h('div', { class: 'pills play-stats' }, qEl, starEl, timeEl, endBtn),
+      h('div', { class: touch ? 'arena touch' : 'arena' }, h('div', { class: 'arena-main' }, form, fb), pad));
 
     gsw = Kit.stopwatch();
     qsw = Kit.stopwatch();
@@ -144,6 +172,16 @@
     return (minus ? '-' : '') + raw.replace(/\D/g, '').slice(0, 7);
   }
 
+  function typeDigit(d) {
+    if (solved) return;
+    input.value = clean(input.value + d);
+  }
+
+  function backspace() {
+    if (solved) return;
+    input.value = input.value.slice(0, -1);
+  }
+
   function toggleSign() {
     input.focus();
     if (solved) return;
@@ -171,7 +209,7 @@
       goBtn.setAttribute('aria-label', 'Next question');
       fb.className = 'feedback ok';
       fb.replaceChildren(cur.tries === 1 ? '⭐ Correct, first try!' : '✓ Correct!',
-        h('small', null, 'Press Enter for the next one'));
+        h('small', null, Kit.isTouch() ? 'Tap Next for the next one' : 'Press Enter for the next one'));
     } else {
       input.value = '';
       input.className = 'ans bad';

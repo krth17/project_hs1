@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fff7e8">
+<title>Untangle</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧶</text></svg>">
+<link rel="stylesheet" href="assets/kit.css">
+<style>
+  /* Layout: board + side panel. Stacked on portrait, side by side on short landscape phones. */
+  .ut { display: grid; gap: 12px; justify-items: center; }
+  .ut-board {
+    --size: min(100%, 640px, max(260px, calc(100vh - 270px)));
+    --size: min(100%, 640px, max(260px, calc(100dvh - 270px)));
+    width: var(--size); aspect-ratio: 1;
+    background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+    background-image: radial-gradient(circle, #efe6d3 1.5px, transparent 1.7px);
+    background-size: 5% 5%;
+  }
+  .ut-board svg {
+    display: block; width: 100%; height: 100%;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  .pills { gap: 6px; }
+  .pills .pill { padding: 6px 11px; }          /* keeps level, time and crossings on one row at 360 px */
+  .ut-side { width: 100%; max-width: 640px; display: grid; gap: 10px; justify-items: center; }
+  .ut-side .row { margin-top: 0; }
+
+  .edge { stroke: #8d99ae; stroke-linecap: round; fill: none; transition: stroke .12s; }
+  .edge.bad { stroke: var(--bad); }
+  .ball { cursor: grab; }
+  .ball .body { stroke: #fff; }
+  .ball .shine { fill: #fff; opacity: .55; pointer-events: none; }
+  .halo { fill: #ffd166; opacity: 0; pointer-events: none; }
+  .ball.held .halo { opacity: .45; }
+  .ball.held { cursor: grabbing; }
+  .ball.done { animation: pop .5s; transform-box: fill-box; transform-origin: center; }
+
+  .ut-msg { font-weight: 800; font-size: 1.15rem; text-align: center; margin: 0; }
+  .ut-win { text-align: center; width: 100%; }
+  .ut-win .big-emoji { font-size: 44px; }
+  .ut-win h2 { margin: 4px 0; }
+  .ut-win p { margin: 2px 0 0; font-weight: 700; }
+  .tier-note { color: var(--muted); font-size: .9rem; text-align: center; margin: 0; }
+
+  @media (orientation: landscape) and (max-height: 520px) {
+    .ut { grid-template-columns: auto minmax(220px, 1fr); align-items: start; justify-items: stretch; }
+    .ut-board { --size: calc(100vh - 130px); --size: calc(100dvh - 130px); width: var(--size); }
+    .ut-side { align-content: start; }
+    .bar { padding: 6px 16px; }
+    .bar .icon-btn { width: 40px; height: 40px; }
+    .pills { margin: 0 0 8px; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="icon-btn" href="index.html" aria-label="Home" title="Home">🏠</a>
+  <h1>🧶 Untangle</h1>
+  <a class="icon-btn" id="gear" href="?setup" aria-label="Settings" title="Settings">⚙️</a>
+</header>
+<main id="app"></main>
+
+<script src="assets/kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  const { h } = Kit;
+
+  const SCHEMA = [
+    { key: 'start', label: 'Where do you want to start?', default: '1', options: [
+      { value: '1', label: '🐣 Tiny', hint: 'levels 1–10' },
+      { value: '11', label: '🐥 Small', hint: 'levels 11–20' },
+      { value: '21', label: '🦁 Big', hint: 'levels 21–30' },
+      { value: '31', label: '🐉 Giant', hint: 'levels 31–40' } ] },
+    { key: 'red', label: 'Show tangled strings in red?', default: 'yes', options: [
+      { value: 'yes', label: '🔴 Yes', hint: 'easier to spot' },
+      { value: 'no', label: '🙈 No', hint: 'extra tricky' } ] }
+  ];
+
+  const app = document.getElementById('app');
+  const init = Kit.readSettings(SCHEMA);
+  Kit.wireHeader(init.settings);
+  if (init.setup) {
+    Kit.renderSetup(app, { id: 'untangle', title: 'Untangle settings', emoji: '🧶', schema: SCHEMA, initial: init });
+    return;
+  }
+
+  const S = init.settings;
+  const SHOW_RED = S.red === 'yes';
+  const MAXL = 40;
+  const NS = 'http://www.w3.org/2000/svg';
+  const COLORS = ['#e24b4a', '#ef9f27', '#639922', '#378add', '#7f77dd', '#d4537e', '#1d9e75', '#d85a30'];
+  const TIERS = ['🐣 Tiny', '🐥 Small', '🦁 Big', '🐉 Giant'];
+  const EARLY = [4, 5, 5, 6, 6, 7, 7, 8, 9, 10];   // balls in levels 1–10: for small children
+
+  // Level 1–10: tiny. Then it grows steadily to 120 balls at level 40.
+  const ballsFor = L => L <= 10 ? EARLY[L - 1] : Math.round(12 * Math.exp(Math.log(10) / 29 * (L - 11)));
+  const keepFor = L => 0.7 + 0.3 * (L - 1) / (MAXL - 1);       // share of the string network kept
+
+  /* ---- geometry (board is 1000 x 1000 units) -------------------------- */
+  const ccw = (a, b, c) => (c.y - a.y) * (b.x - a.x) - (b.y - a.y) * (c.x - a.x);
+  const cross = (p, q, r, s) => ccw(p, q, r) * ccw(p, q, s) < 0 && ccw(r, s, p) * ccw(r, s, q) < 0;
+  const share = (a, b) => a[0] === b[0] || a[0] === b[1] || a[1] === b[0] || a[1] === b[1];
+
+  function countCross(pts, E) {
+    let c = 0;
+    for (let i = 0; i < E.length; i++) for (let j = i + 1; j < E.length; j++) {
+      if (!share(E[i], E[j]) && cross(pts[E[i][0]], pts[E[i][1]], pts[E[j][0]], pts[E[j][1]])) c++;
+    }
+    return c;
+  }
+
+  /* ---- building a puzzle ---------------------------------------------- */
+  // A random planar network is made first, so a tangle-free arrangement always exists.
+  function makeGraph(L) {
+    const n = ballsFor(L), pad = 70, span = 1000 - 2 * pad;
+    let minD = 0.62 * Math.sqrt(span * span / n), sol;
+    for (;;) {
+      sol = [];
+      for (let t = 0; sol.length < n && t < 6000; t++) {
+        const p = { x: pad + Math.random() * span, y: pad + Math.random() * span };
+        if (sol.every(q => Math.hypot(q.x - p.x, q.y - p.y) >= minD)) sol.push(p);
+      }
+      if (sol.length === n) break;
+      minD *= 0.9;
+    }
+    // Shortest strings first, skipping any that would cross: a triangulation.
+    const pairs = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      pairs.push([i, j, Math.hypot(sol[i].x - sol[j].x, sol[i].y - sol[j].y)]);
+    }
+    pairs.sort((a, b) => a[2] - b[2]);
+    const E = [];
+    for (const [i, j] of pairs) {
+      const e = [i, j];
+      if (E.every(f => share(e, f) || !cross(sol[i], sol[j], sol[f[0]], sol[f[1]]))) E.push(e);
+    }
+    // Thin it out for the easier levels, but give every ball at least two strings.
+    const deg = new Array(n).fill(0);
+    E.forEach(e => { deg[e[0]]++; deg[e[1]]++; });
+    let want = Math.max(n, Math.round(E.length * keepFor(L)));
+    for (const e of Kit.shuffle(E.slice())) {
+      if (E.length <= want) break;
+      if (deg[e[0]] > 2 && deg[e[1]] > 2) {
+        E.splice(E.indexOf(e), 1);
+        deg[e[0]]--; deg[e[1]]--;
+      }
+    }
+    return { n, E, sol };
+  }
+
+  // Throw the balls onto a circle (two circles for big puzzles) in a tangled order.
+  function scramble(G) {
+    const { n, E } = G;
+    const need = Math.max(1, Math.ceil(E.length * 0.2));
+    const outer = n > 48 ? Math.ceil(n * 0.6) : n;
+    let best = null, bestC = -1;
+    for (let t = 0; t < 300; t++) {
+      const order = Kit.shuffle([...Array(n).keys()]);
+      const pts = new Array(n);
+      order.forEach((ball, k) => {
+        const ring = k < outer, cnt = ring ? outer : n - outer, idx = ring ? k : k - outer;
+        const R = ring ? 430 : 280, a = 2 * Math.PI * idx / cnt + (ring ? 0 : Math.PI / cnt);
+        pts[ball] = { x: 500 + R * Math.cos(a), y: 500 + R * Math.sin(a) };
+      });
+      const c = countCross(pts, E);
+      if (c > bestC) { best = pts; bestC = c; }
+      if (c >= need) break;
+    }
+    return best;
+  }
+
+  /* ---- state ---------------------------------------------------------- */
+  let L = +S.start, G, pos, bad, over, moves, hints, sw, tick, drag, raf, anim;
+  let svg, lines, balls, pillT, pillX, side, ballR;
+
+  function render(newGraph) {
+    clearInterval(tick);
+    cancelAnimationFrame(anim);
+    if (newGraph) G = makeGraph(L);
+    pos = scramble(G).map(p => ({ x: p.x, y: p.y }));
+    bad = new Array(G.E.length).fill(0);
+    over = false; moves = 0; hints = 0; drag = null;
+
+    const n = G.n;
+    ballR = Math.min(34, 150 / Math.sqrt(n));
+    const lineW = Math.min(8, Math.max(3.5, 90 / Math.pow(n, 0.6)));
+
+    svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 1000 1000');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Balls of yarn joined by strings. Drag the balls so no strings cross.');
+    const gl = document.createElementNS(NS, 'g'), gb = document.createElementNS(NS, 'g');
+    lines = G.E.map(() => {
+      const l = document.createElementNS(NS, 'line');
+      l.setAttribute('class', 'edge');
+      l.setAttribute('stroke-width', lineW);
+      gl.append(l);
+      return l;
+    });
+    balls = pos.map((p, i) => {
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', 'ball');
+      g.innerHTML =
+        '<circle class="halo" r="' + ballR * 2.4 + '"/>' +
+        '<circle class="body" r="' + ballR + '" fill="' + COLORS[i % COLORS.length] + '" stroke-width="' + Math.max(2, ballR / 7) + '"/>' +
+        '<circle class="shine" cx="' + -ballR * .35 + '" cy="' + -ballR * .35 + '" r="' + ballR * .26 + '"/>';
+      gb.append(g);
+      return g;
+    });
+    svg.append(gl, gb);
+    svg.addEventListener('pointerdown', onDown);
+    svg.addEventListener('pointermove', onMove);
+    svg.addEventListener('pointerup', onUp);
+    svg.addEventListener('pointercancel', onUp);
+    svg.addEventListener('contextmenu', e => e.preventDefault());
+
+    pillT = h('span', { class: 'pill' });
+    pillX = h('span', { class: 'pill' });
+    pillX.title = 'Crossing strings';
+    const hintBtn = h('button', { class: 'btn', type: 'button', onclick: hint }, '💡 Hint');
+    const mixBtn = h('button', { class: 'btn', type: 'button', onclick: () => render(false) }, '🔀 Mix up');
+    side = h('div', { class: 'ut-side' },
+      h('p', { class: 'ut-msg muted' }, SHOW_RED ? '👆 Drag balls so no strings cross' : '👆 Drag until nothing crosses'),
+      h('div', { class: 'row' }, hintBtn, mixBtn),
+      L > 30 ? h('p', { class: 'tier-note' }, '🐉 Giants are tough, even for grown-ups!') : null);
+
+    app.replaceChildren(
+      h('div', { class: 'pills' },
+        h('span', { class: 'pill' }, TIERS[Math.floor((L - 1) / 10)].split(' ')[0] + ' Level ' + L), pillT, pillX),
+      h('div', { class: 'ut' }, h('div', { class: 'ut-board' }, svg), side));
+
+    sw = Kit.stopwatch();
+    tick = setInterval(showTime, 250);
+    showTime();
+    refresh();
+  }
+
+  function showTime() { if (pillT) pillT.textContent = '⏱ ' + Kit.fmtTime(sw.ms()); }
+
+  // Redraw everything from `pos`, recount crossings.
+  function refresh() {
+    bad.fill(0);
+    let c = 0;
+    const E = G.E;
+    for (let i = 0; i < E.length; i++) for (let j = i + 1; j < E.length; j++) {
+      if (!share(E[i], E[j]) && cross(pos[E[i][0]], pos[E[i][1]], pos[E[j][0]], pos[E[j][1]])) { bad[i] = bad[j] = 1; c++; }
+    }
+    E.forEach((e, i) => {
+      const l = lines[i], a = pos[e[0]], b = pos[e[1]];
+      l.setAttribute('x1', a.x); l.setAttribute('y1', a.y);
+      l.setAttribute('x2', b.x); l.setAttribute('y2', b.y);
+      l.classList.toggle('bad', SHOW_RED && !!bad[i]);
+    });
+    balls.forEach((g, i) => g.setAttribute('transform', 'translate(' + pos[i].x + ' ' + pos[i].y + ')'));
+    pillX.textContent = SHOW_RED ? (c ? '🪢 ' + c : '✅ 0') : '🪢 ?';
+    return c;
+  }
+
+  /* ---- dragging -------------------------------------------------------- */
+  function toBoard(e) {
+    const r = svg.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width * 1000, y: (e.clientY - r.top) / r.height * 1000 };
+  }
+  function onDown(e) {
+    if (over || drag) return;
+    const p = toBoard(e);
+    let best = -1, bd = Math.max(ballR * 2.2, 55);
+    pos.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = i; } });
+    if (best < 0) return;
+    e.preventDefault();
+    svg.setPointerCapture(e.pointerId);
+    drag = { i: best, dx: pos[best].x - p.x, dy: pos[best].y - p.y, id: e.pointerId };
+    balls[best].parentNode.append(balls[best]);                     // bring to front
+    balls[best].classList.add('held');
+    moves++;
+  }
+  function onMove(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.last = toBoard(e);
+    if (!raf) raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (!drag) return;
+      const m = ballR + 6;
+      pos[drag.i] = {
+        x: Math.max(m, Math.min(1000 - m, drag.last.x + drag.dx)),
+        y: Math.max(m, Math.min(1000 - m, drag.last.y + drag.dy))
+      };
+      refresh();
+    });
+  }
+  function onUp(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+    cancelAnimationFrame(raf); raf = 0;
+    if (drag.last) {
+      const m = ballR + 6;
+      pos[drag.i] = { x: Math.max(m, Math.min(1000 - m, drag.last.x + drag.dx)), y: Math.max(m, Math.min(1000 - m, drag.last.y + drag.dy)) };
+    }
+    balls[drag.i].classList.remove('held');
+    drag = null;
+    if (refresh() === 0) win();
+  }
+
+  /* ---- hint: slide the most misplaced ball to its place ---------------- */
+  function hint() {
+    if (over || drag) return;
+    let k = -1, far = 0;
+    pos.forEach((p, i) => { const d = Math.hypot(p.x - G.sol[i].x, p.y - G.sol[i].y); if (d > far) { far = d; k = i; } });
+    if (k < 0) return;
+    hints++;
+    const from = { x: pos[k].x, y: pos[k].y }, to = G.sol[k], t0 = performance.now();
+    cancelAnimationFrame(anim);
+    (function step(now) {
+      const t = Math.min(1, (now - t0) / 450), e = 1 - Math.pow(1 - t, 3);
+      pos[k] = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+      const c = refresh();
+      if (t < 1) anim = requestAnimationFrame(step); else if (c === 0) win();
+    })(t0);
+  }
+
+  /* ---- winning ---------------------------------------------------------- */
+  function win() {
+    if (over) return;
+    over = true;
+    clearInterval(tick);
+    const ms = sw.stop();
+    showTime();
+    balls.forEach((g, i) => setTimeout(() => g.classList.add('done'), i * 20));
+    const last = L === MAXL;
+    const next = h('button', { class: 'btn primary big', type: 'button', onclick: () => { L = last ? 1 : L + 1; render(true); window.scrollTo(0, 0); } },
+      last ? '🔁 Start again' : '➡ Next level');
+    const again = h('button', { class: 'btn', type: 'button', onclick: () => { render(true); window.scrollTo(0, 0); } }, '🔁 Replay');
+    side.replaceChildren(h('section', { class: 'ut-win' },
+      h('div', { class: 'big-emoji' }, last ? '🏆' : (hints === 0 ? '🎉' : '⭐')),
+      h('h2', null, last ? 'You untangled every level!' : 'Untangled!'),
+      h('p', null, '⏱ ' + Kit.fmtTime(ms) + ' · 👆 ' + moves + ' moves' + (hints ? ' · 💡 ' + hints : '')),
+      h('div', { class: 'row' }, next, again, h('a', { class: 'btn', href: 'index.html' }, '🏠 Home'))));
+    side.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    next.focus({ preventScroll: true });
+  }
+
+  render(true);
+})();
+</script>
+</body>
+</html>

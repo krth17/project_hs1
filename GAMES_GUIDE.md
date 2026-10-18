@@ -35,6 +35,7 @@ assets/
 wordsearch.html     game: Word Search
 addition.html       game: Addition (thin page + arith.js)
 subtraction.html    game: Subtraction (thin page + arith.js)
+untangle.html       game: Untangle (self-contained page)
 ```
 
 - One game is one top-level `name.html`, so its URL stays short.
@@ -54,8 +55,11 @@ The site has **two looks**:
   `kit.css`.
   - Off-white or white surfaces with thin borders and soft shadows, and one
     indigo accent.
-  - System sans-serif font (`Inter`/`system-ui`), regular weight, with
-    semibold headings.
+  - System sans-serif font (`Inter`/`system-ui`) at **medium (500) weight for
+    body text, 800 for headings and labels**. Regular 400 looks thin on phones.
+    Secondary text is a dark grey (`--muted`), not a pale one. Don't set
+    `-webkit-font-smoothing: antialiased`, which thins text further on Apple
+    devices.
   - Follows the device's **dark mode** (`prefers-color-scheme`).
   - Line icons are inline SVG. Each game's emoji appears only in a small
     tinted square on its card.
@@ -197,9 +201,10 @@ start(init.settings);
 
 ## 6. Game flow conventions
 
-1. **Start fast.** A tile tap goes straight into play. The one exception is a
-   game that needs typing on a phone: it shows a single **▶ Start** button
-   first, because phones only open the keyboard after a tap.
+1. **Start fast.** A tile tap goes straight into play. On a desktop, a game
+   that needs typing shows a single **▶ Start** button first (so the box has
+   focus). On a phone or tablet it starts at once, because the game uses its
+   own number pad (§7).
 2. **During play** show pills for the level or mode, a running ⏱ timer, and
    the score or what's left (taps, questions, stars).
 3. **End of game** shows a results card or screen with:
@@ -219,21 +224,28 @@ start(init.settings);
 
 ### Typing answers (number drills, spelling, …)
 
-- Use **one `<input>` that stays focused the whole game.** Never destroy or
-  blur it between questions, or the phone keyboard closes.
-- Numbers: `type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" enterkeyhint="go"`.
-  This shows the number pad. Strip non-digits on `input`.
-- When an answer can be negative, phone number pads often have **no minus
-  key**. Show a **±** button above ↵ that toggles a leading `-`, and also
-  accept a typed `-` on desktop.
+- **Never let the phone's system keyboard open during play.** It covers about
+  half the screen and pushes the question out of view. On touch devices
+  (`Kit.isTouch()`) the game shows its **own compact on-screen keypad** in the
+  page, under the question, and sets `inputmode="none"` on the input so the
+  system keyboard stays closed. The whole question, the keypad and the
+  feedback must fit in a 320 × 568 px screen with no scrolling: size the
+  question with `vh` as well as `vw`. In short landscape (`max-height: 520px`)
+  put the keypad beside the question.
+- Keypad layout (arith.js): digits 1–9 in a 3-column grid, then `±` (only if
+  answers can be negative), `0`, `⌫`. A tall **↵ / Next** key fills a column
+  on the right. Keys are at least 44 px tall and call `Kit.keepFocus(btn)`.
+- **Desktop uses the real keyboard** (no keypad): `type="text"
+  inputmode="numeric" pattern="[0-9]*" autocomplete="off" enterkeyhint="go"`.
+  Strip non-digits on `input`. Hardware keyboards still work on touch devices
+  because the input keeps focus.
+- When an answer can be negative, show a **±** button that toggles a leading
+  `-`, and also accept a typed `-` on desktop.
 - The input font must be at least 16 px, or iOS zooms in.
 - **Enter, then Enter again:** the first Enter checks the answer, and after a
-  correct answer the next Enter moves on. Put the input in a `<form>` so the
-  phone's "Go" key works too.
-- The iPhone number pad has no Enter key, so always show a big **↵** button
-  next to the input.
-- Every button shown near the input calls `Kit.keepFocus(btn)` so tapping it
-  doesn't close the keyboard.
+  correct answer the next Enter moves on. Put the input in a `<form>` so a
+  hardware Enter works too.
+- Use **one `<input>` for the whole game.** Never destroy it between questions.
 - **Desktop is keyboard-only:** digits, `Enter` to check or go on, `Esc` to
   end. Results screen: `Enter` replays (focus is on Replay), `Tab` reaches Home.
 - Wrong answer: clear the box, shake it, and let the child try again. Count
@@ -371,6 +383,41 @@ Pages → *Deploy from branch* → `main` / root. The site appears at
   (✓, or ✗ with what was typed first), Tries, Time. An unfinished last
   question isn't counted. Then 🔁 Replay (starts straight away with the same
   settings) and 🏠 Main screen.
+
+### 🧶 Untangle (`untangle.html`)
+
+- Balls of yarn are joined by strings. The child **drags the balls** until no
+  two strings cross. The page is self-contained (no engine file).
+- **Settings:** `start` = 1 / 11 / 21 / 31 (the first level to play: Tiny,
+  Small, Big, Giant; default 1), `red` = yes / no (default yes): draw crossing
+  strings in red and show the count.
+- **40 levels** in four tiers of ten. Levels advance with ➡ Next level without
+  reloading; after level 40 the game starts again at 1.
+
+  | Tier | Levels | Balls | Strings kept |
+  |---|---|---|---|
+  | 🐣 Tiny | 1–10 | 4–10 | 70–77 % |
+  | 🐥 Small | 11–20 | 12–25 | 78–85 % |
+  | 🦁 Big | 21–30 | 27–54 | 86–93 % |
+  | 🐉 Giant | 31–40 | 59–120 | 94–100 % |
+
+  Tiny is meant for a small child. Giant (up to 120 balls and ~340 strings) is
+  meant to be close to impossible for an adult on a phone. To retune, change
+  `EARLY`, `ballsFor` and `keepFor` at the top of the script.
+- **How a puzzle is made:** random points → a planar network (shortest
+  non-crossing strings first, thinned so every ball keeps ≥ 2 strings) → the
+  balls are thrown onto a circle in a random order that has enough crossings.
+  A tangle-free arrangement therefore always exists.
+- Crossings are recomputed on every move (O(strings²)), at most once per frame.
+  A ball is picked up by the nearest ball within a generous radius, and it
+  keeps its offset from the finger. The board has `touch-action: none` so
+  dragging never scrolls the page.
+- **💡 Hint** slides the most misplaced ball to its place in the hidden
+  solution; the result shows how many hints were used. **🔀 Mix up** re-throws
+  the same network.
+- The board is a square sized from the viewport height, so board, pills and
+  buttons fit a phone without scrolling. On short landscape screens the
+  buttons move beside the board.
 
 ## 12. Ideas and to-do
 
